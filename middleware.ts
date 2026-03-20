@@ -1,19 +1,15 @@
-import { clerkMiddleware } from "@clerk/nextjs/server";
-import { NextResponse, NextFetchEvent } from "next/server";
-import type { NextRequest } from "next/server";
+import { NextResponse, NextRequest } from "next/server";
 
-export default async function middleware(
-  req: NextRequest,
-  evt: NextFetchEvent,
-) {
+export function middleware(req: NextRequest) {
   const country = req.geo?.country;
-  // Check for Russian traffic first as there's too much spam from Russia
+
+  // Block traffic from Russia
   if (country === "RU") {
     return new NextResponse("Access Denied", { status: 403 });
   }
 
-  // If not from Russia, proceed with Clerk authentication
-  return clerkMiddleware()(req, evt);
+  // Allow all other requests
+  return NextResponse.next();
 }
 
 export const config = {
