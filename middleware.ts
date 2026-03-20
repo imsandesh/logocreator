@@ -1,20 +1,25 @@
 import { NextResponse, NextRequest } from "next/server";
 
 export function middleware(req: NextRequest) {
-  const country = req.geo?.country;
+  try {
+    const country = req.geo?.country || "UNKNOWN";
 
-  // Block traffic from Russia
-  if (country === "RU") {
-    return new NextResponse("Access Denied", { status: 403 });
+    // Block Russia
+    if (country === "RU") {
+      return new NextResponse("Access Denied", { status: 403 });
+    }
+
+    return NextResponse.next();
+  } catch (error) {
+    console.error("Middleware error:", error);
+
+    // Always fail-safe
+    return NextResponse.next();
   }
-
-  // Allow all other requests
-  return NextResponse.next();
 }
 
 export const config = {
   matcher: [
-    // Skip Next.js internals and static files
     "/((?!_next|[^?]*\\.(?:html?|css|js(?!on)|jpe?g|webp|png|gif|svg|ttf|woff2?|ico|csv|docx?|xlsx?|zip|webmanifest)).*)",
   ],
 };
