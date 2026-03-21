@@ -42,7 +42,7 @@ export async function POST(req: Request) {
     await clerkClient().then((client) =>
       client.users.updateUserMetadata(user.id, {
         unsafeMetadata: {
-          remaining: "BYOK",
+          remaining: "Unlimited",
         },
       }),
     );
@@ -81,6 +81,15 @@ export async function POST(req: Request) {
       // @ts-expect-error - not typed in SDK
       response_format: "base64",
     });
+
+    // ✅ SET UNLIMITED CREDITS HERE
+    await clerkClient().then((client) =>
+      client.users.updateUserMetadata(user.id, {
+        unsafeMetadata: {
+          remaining: "Unlimited",
+        },
+      }),
+    );
 
     return Response.json(response.data[0], { status: 200 });
   } catch (error: unknown) {
