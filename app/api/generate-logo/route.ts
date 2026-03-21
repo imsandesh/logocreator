@@ -28,8 +28,9 @@ export async function POST(req: Request) {
       })
       .parse(json);
 
-    // Helicone (optional)
+    // Together config
     const options: ConstructorParameters<typeof Together>[0] = {};
+
     if (process.env.HELICONE_API_KEY) {
       options.baseURL = "https://together.helicone.ai/v1";
       options.defaultHeaders = {
@@ -48,105 +49,87 @@ export async function POST(req: Request) {
       });
     }
 
-    // Together client
-    const client = new Together({
-      ...options,
-      apiKey: data.userAPIKey || process.env.TOGETHER_API_KEY,
-    });
+    const client = new Together(options);
 
+    // BYOK support
     if (data.userAPIKey) {
-      (await clerkClient()).users.updateUserMetadata(user.id, {
-        unsafeMetadata: {
-          remaining: "BYOK",
-        },
+      client.apiKey = data.userAPIKey;
+
+      await (await clerkClient()).users.updateUserMetadata(user.id, {
+        unsafeMetadata: { remaining: "BYOK" },
       });
     }
 
+    // Apply rate limit
     if (ratelimit) {
-      const identifier = user.id;
-      const { success, remaining } = await ratelimit.limit(identifier);
+      const { success, remaining } = await ratelimit.limit(user.id);
 
-      (await clerkClient()).users.updateUserMetadata(user.id, {
-        unsafeMetadata: {
-          remaining,
-        },
+      await (await clerkClient()).users.updateUserMetadata(user.id, {
+        unsafeMetadata: { remaining },
       });
 
       if (!success) {
         return new Response(
-          "You've used up all your credits. Enter your own Together API Key to generate more logos.",
-          { status: 429 }
+          "You've used all your credits. Add your API key.",
+          {
+            status: 429,
+            headers: { "Content-Type": "text/plain" },
+          }
         );
       }
     }
 
-    const styles: Record<string, string> = {
+    // Styles
+    const styleLookup: Record<string, string> = {
       Flashy:
-        "Flashy, bold, futuristic, vibrant neon colors with metallic accents.",
+        "Flashy, bold, futuristic, vibrant neon colors, metallic glossy accents",
       Tech:
-        "clean, sleek, minimalist, sharp focus, photorealistic.",
+        "Minimalist, clean, sleek, neutral palette, sharp focus, cinematic",
       Modern:
-        "modern, geometric shapes, clean lines, flat design.",
+        "Modern, geometric, clean lines, natural colors, strategic negative space",
       Playful:
-        "playful, bright colors, rounded shapes, lively.",
+        "Playful, bright bold colors, rounded shapes, lively",
       Abstract:
-        "abstract, creative, unique patterns and textures.",
+        "Abstract, artistic, unique shapes, patterns, textures",
       Minimal:
-        "minimal, simple, single color, negative space.",
+        "Minimal, simple, timeless, single color, negative space",
     };
 
-    const prompt = dedent`
-      A professional logo design.
-      ${styles[data.selectedStyle]}
+    const prompt = dedent`A professional high-quality logo, clean vector style, minimal shapes.
+Style: ${styleLookup[data.selectedStyle]}
+Primary color: ${data.selectedPrimaryColor.toLowerCase()}
+Background color: ${data.selectedBackgroundColor.toLowerCase()}
+Company: ${data.companyName}
+${data.additionalInfo ? `Additional: ${data.additionalInfo}` : ""}`;
 
-      Primary color: ${data.selectedPrimaryColor.toLowerCase()}
-      Background color: ${data.selectedBackgroundColor.toLowerCase()}
-      Company name: ${data.companyName}
-
-      ${data.additionalInfo ? `Additional info: ${data.additionalInfo}` : ""}
-    `;
-
+    // Generate image
     const response = await client.images.create({
       prompt,
-      model: "black-forest-labs/FLUX.1.1-pro",
+      model: "black-forest-labs/FLUX.1-schnell", // safer model
       width: 768,
       height: 768,
-      // @ts-expect-error - not yet typed in Together SDK
+      // @ts-expect-error not in official types yet
       response_format: "base64",
     });
 
     return Response.json(response.data[0], { status: 200 });
-
   } catch (error: unknown) {
-    console.error("API ERROR:", error);
+    console.error("ERROR:", error);
 
-    // Safe type narrowing
-    if (
-      typeof error === "object" &&
-      error !== null &&
-      "error" in error
-    ) {
-      const err = error as {
-        error?: {
-          error?: {
-            code?: string;
-            type?: string;
-          };
-        };
-      };
+    let message = "Unknown error";
 
-      if (err.error?.error?.code === "invalid_api_key") {
-        return new Response("Your API key is invalid.", { status: 401 });
-      }
-
-      if (err.error?.error?.type === "request_blocked") {
-        return new Response(
-          "Your Together AI account needs billing enabled ($50 credit pack).",
-          { status: 403 }
-        );
-      }
+    if (error instanceof Error) {
+      message = error.message;
+    } else if (typeof error === "object") {
+      message = JSON.stringify(error);
     }
 
-    return new Response("Internal Server Error", { status: 500 });
+    return new Response("ERROR: " + message, {
+      status: 500,
+      headers: { "Content-Type": "text/plain" },
+    });
   }
 }
+
+// ✅ IMPORTANT (fixes Vercel issues)
+export const runtime = "nodejs";
